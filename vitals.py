@@ -99,11 +99,21 @@ def main():
                 # Print the results
                 # We format it to 1 decimal place for cleaner reading
                 print(f"BPM: {bpm:.1f} | SpO2: {spo2:.1f}%")
-                db_ref.set({
-                    'bpm': round(bpm, 1),
-                    'spo2': round(spo2, 1),
-                    'timestamp': time.time()
-                })
+                anaphylaxis_alert = False
+                if bpm > 120 and spo2 < 92 and bpm > 0:
+                    anaphylaxis_alert = True
+                    print("⚠️ WARNING: Thresholds indicate Anaphylactic Shock condition!")
+                # -----------------------------------------------
+
+                try:
+                    db_ref.set({
+                        'bpm': round(bpm, 1),
+                        'spo2': round(spo2, 1),
+                        'anaphylaxis_alert': anaphylaxis_alert, # Send the alert flag to the cloud
+                        'timestamp': time.time()
+                    })
+                except Exception as cloud_err:
+                    print(f"Cloud upload skipped: {cloud_err}")
                 # Clear half the buffer so we wait a moment before the next calculation,
                 # creating a smooth "rolling window" effect.
                 for _ in range(BUFFER_SIZE // 2):

@@ -5,20 +5,41 @@
     <title>IoT Pulse Oximeter Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-        body { font-family: Arial, sans-serif; background: #121212; color: white; text-align: center; padding: 30px; }
+        body { font-family: Arial, sans-serif; background: #121212; color: white; text-align: center; padding: 30px; transition: background 0.5s ease; }
         .container { display: flex; justify-content: center; gap: 30px; margin-top: 20px; }
         .card { background: #1e1e1e; padding: 25px; border-radius: 15px; width: 200px; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
-        .chart-card { background: #1e1e1e; padding: 20px; border-radius: 15px; width: 510px; margin: 30px auto 0 auto; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
+        .chart-card { background: #1e1e1e; padding: 20px; border-radius: 15px; width: 550px; margin: 30px auto 0 auto; box-shadow: 0 4px 10px rgba(0,0,0,0.5); }
         h1 { color: #00ffcc; margin-bottom: 5px; }
         .value { font-size: 3rem; font-weight: bold; margin: 15px 0; }
         #bpm-val { color: #ff3366; }
         #spo2-val { color: #33ccff; }
+
+        #alert-banner {
+            display: none;
+            background: #ff3333;
+            color: white;
+            padding: 15px;
+            font-size: 1.5rem;
+            font-weight: bold;
+            border-radius: 10px;
+            width: 560px;
+            margin: 20px auto 0 auto;
+            animation: blink 1s infinite;
+            box-shadow: 0 0 20px rgba(255, 51, 51, 0.7);
+        }
+        @keyframes blink {
+            0% { opacity: 1; }
+            50% { opacity: 0.4; }
+            100% { opacity: 1; }
+        }
     </style>
 </head>
 <body>
 
     <h1>Live Vitals Dashboard</h1>
-    <p style="color: #888;">Streamed securely from Raspberry Pi Zero 2 W</p>
+    <p style="color: #888;">Project Presentation Mode - Cloud Connected</p>
+
+    <div id="alert-banner">🚨 EMERGENCY: SUSPECTED ANAPHYLACTIC SHOCK 🚨</div>
 
     <div class="container">
         <div class="card">
@@ -34,15 +55,14 @@
     </div>
 
     <div class="chart-card">
-        <h3 style="margin-top: 0; color: #ff3366;">BPM History (Real-Time)</h3>
-        <canvas id="bpmChart" width="500" height="250"></canvas>
+        <h3 style="margin-top: 0; color: #ff3366;">Real-Time BPM Timeline</h3>
+        <canvas id="bpmChart" width="550" height="250"></canvas>
     </div>
 
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 
     <script>
-        // Your specific Firebase database configuration
         const firebaseConfig = {
             databaseURL: "https://bpm-monitor-f7b6a-default-rtdb.europe-west1.firebasedatabase.app/"
         };
@@ -50,60 +70,72 @@
         firebase.initializeApp(firebaseConfig);
         const database = firebase.database();
 
-        // 3. Initialize the Line Chart
+        // Track the timestamp of the last reading to prevent fast duplicates
+        let lastTimestamp = 0; 
+
+        // Initialize the Chart with an expanded viewport (50 points total)
         const ctx = document.getElementById('bpmChart').getContext('2d');
-        const maxDataPoints = 20; // Keeps the graph moving by showing only the last 20 readings
+        const maxDataPoints = 50; 
 
         const bpmChart = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: [], // Time labels will go here
+                labels: [], 
                 datasets: [{
                     label: 'Heart Rate (BPM)',
-                    data: [], // BPM values will go here
+                    data: [], 
                     borderColor: '#ff3366',
                     backgroundColor: 'rgba(255, 51, 102, 0.1)',
                     borderWidth: 3,
-                    tension: 0.3, // Makes the line smooth/curved instead of jagged
+                    tension: 0.3, 
                     pointRadius: 2
                 }]
             },
             options: {
                 responsive: true,
+                animation: { duration: 200 }, // Smooth transition transitions when data shifts
                 scales: {
-                    x: { grid: { color: '#333' }, ticks: { color: '#888' } },
-                    y: { grid: { color: '#333' }, ticks: { color: '#888' }, min: 40, max: 160 } // Common human HR bounds
+                    x: { grid: { color: '#333' }, ticks: { color: '#888', maxRotation: 0 } },
+                    y: { grid: { color: '#333' }, ticks: { color: '#888' }, min: 40, max: 160 } 
                 },
-                plugins: {
-                    legend: { display: false } // Hide the default box legend to keep it clean
-                }
+                plugins: { legend: { display: false } }
             }
         });
 
-        // 4. Listen for Cloud Updates and Feed the Graph
+        // Listen for data modifications from Firebase
         database.ref('/vitals').on('value', (snapshot) => {
             const data = snapshot.val();
             if (data) {
-                // Update the text cards
+                // Check if this is truly new data, or just an echo event
+                if (data.timestamp === lastTimestamp) return;
+                lastTimestamp = data.timestamp;
+
+                // Update UI text values
                 document.getElementById('bpm-val').innerText = data.bpm;
                 document.getElementById('spo2-val').innerText = data.spo2 + "%";
 
-                // Generate a quick timestamp string (HH:MM:SS) for the chart's X-axis
+                // Handle Alert Banner UI Transitions
+                const banner = document.getElementById('alert-banner');
+                if (data.anaphylaxis_alert === true) {
+                    banner.style.display = 'block';
+                    document.body.style.background = '#220b0b'; 
+                } else {
+                    banner.style.display = 'none';
+                    document.body.style.background = '#121212'; 
+                }
+
+                // Append timestamps to chart X-Axis
                 const now = new Date();
                 const timeString = now.toTimeString().split(' ')[0];
-
-                // Add new data to the chart arrays
                 bpmChart.data.labels.push(timeString);
                 bpmChart.data.datasets[0].data.push(data.bpm);
 
-                // If the graph gets too long, cut the oldest data point from the left
-                // This creates a beautiful "scrolling/rolling window" effect!
+                // FIFO Scrolling Window Logic
                 if (bpmChart.data.labels.length > maxDataPoints) {
                     bpmChart.data.labels.shift();
                     bpmChart.data.datasets[0].data.shift();
                 }
 
-                // Tell Chart.js to redraw the screen with the new numbers
                 bpmChart.update();
             }
         });
